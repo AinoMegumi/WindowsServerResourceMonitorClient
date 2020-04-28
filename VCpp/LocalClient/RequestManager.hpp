@@ -1,6 +1,5 @@
 ﻿#pragma once
-#include "../Server/httplib.h"
-#include "StringEncode.hpp"
+#include "httplib.h"
 #include <picojson/picojson.h>
 #include <chrono>
 
@@ -35,7 +34,7 @@ public:
 		}
 		this->ErrorCount = 0;
 		picojson::value val{};
-		if (const std::string err = picojson::parse(val, UTF8_To_ShiftJIS(res->body)); !err.empty()) throw std::runtime_error(err);
+		if (const std::string err = picojson::parse(val, res->body); !err.empty()) throw std::runtime_error(err);
 		obj = val.get<picojson::object>();
 		this->LastRequest = GetCurrentClock();
 		return 0;

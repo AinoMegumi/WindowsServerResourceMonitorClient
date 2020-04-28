@@ -15,6 +15,9 @@
 #include <unordered_map>
 #include <functional>
 #include <sstream>
+#ifdef _DEBUG
+#include <fstream>
+#endif
 
 class ResponseProcessingManager {
 private:
@@ -347,6 +350,7 @@ public:
 		this->diskUsed.Draw((GraphSpaceWidth + this->processor.GetRadius() + this->memory.GetRadius()) * 2, 0);
 	}
 	void Update(const picojson::object& obj, const bool WriteErrorJson = true) {
+#ifdef _DEBUG
 		try {
 			this->processor.Update(obj.at("cpu").get<picojson::object>());
 			this->memory.Update(obj.at("memory").get<picojson::object>().at("physical").get<picojson::object>());
@@ -357,6 +361,12 @@ public:
 			std::ofstream ofs("errorjson.log", std::ios::out | std::ios::app);
 			ofs << picojson::value(obj) << std::endl;
 		}
+#else
+		UNREFERENCED_PARAMETER(WriteErrorJson);
+		this->processor.Update(obj.at("cpu").get<picojson::object>());
+		this->memory.Update(obj.at("memory").get<picojson::object>().at("physical").get<picojson::object>());
+		this->diskUsed.Update(obj.at("disk").get<picojson::array>()[0].get<picojson::object>());
+#endif
 	}
 	void ApplyViewParameter() {
 		this->processor.ApplyViewParameter();
