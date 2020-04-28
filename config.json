@@ -1,0 +1,11 @@
+{
+  "domain": "localhost",
+  "all": "/v1/",
+  "cpu": "/v1/cpu",
+  "memory": "v1/mem",
+  "storage": "v1/disk/",
+  "network": "v1/network/",
+  "service": "v1/service/",
+  "stop": "v1/stop", 
+  "pause": "v1/pause"
+}
