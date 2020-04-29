@@ -40,7 +40,11 @@ void GetResourceInformation(std::exception_ptr& eptr) {
 				return false;
 			}
 		};
-		RequestManager request("localhost", 32768, 1000, 100);
+		picojson::value v{};
+		std::ifstream ifs("server.json");
+		std::string str((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
+		if (const std::string err = picojson::parse(v, str); !err.empty()) throw std::runtime_error(err);
+		RequestManager request(v.get<picojson::object>(), 1000, 100);
 		picojson::object resVal{};
 		while (1) {
 			if (const int Result = request.GetAll(resVal, "/v1/"); Result == 0) {

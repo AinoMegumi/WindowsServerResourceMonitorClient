@@ -19,6 +19,11 @@
 #include <fstream>
 #endif
 
+namespace {
+	const std::vector<std::string> NetworkSpeedUnitList = { "Kbps", "Mbps", "Gbps" };
+	const std::vector<std::string> DiskSpeedUnitList = { "KB/s", "MB/s", "GB/s" };
+}
+
 class ResponseProcessingManager {
 private:
 	static constexpr size_t CharBufferSize = 1024;
@@ -98,18 +103,25 @@ private:
 				catch(...) {}
 			}
 		};
+
 		class TransferPercentManager {
 		private:
 			double Max;
 			double Current;
-		public:
-			TransferPercentManager() = default;
-			double Calc(const double& Transfer) {
-				this->Current = Transfer;
-				this->Max = std::max(this->Max, this->Current);
-				return Transfer / this->Max;
+			static constexpr double ToNextUnit(const double& val) { return val / 1024.0; }
+			static std::pair<double, std::string> GetSpeedInfo(const double& val, const size_t UnitID, const std::vector<std::string>& UnitList) {
+				return (val > 1024.0 && UnitID < UnitList.size()) ? GetSpeedInfo(ToNextUnit(val), UnitID + 1, UnitList) : std::make_pair(val, UnitList.at(UnitID));
 			}
-			double GetCurrent() const noexcept { return this->Current; }
+		public:
+			TransferPercentManager() : Current(), Max(1.0) {}
+			double Calc(const double& Transfer) {
+				this->Current = ToNextUnit(Transfer);
+				this->Max = std::max(this->Max, this->Current);
+				return (this->Current / this->Max) * 100.0;
+			}
+			std::pair<double, std::string> GetCurrent(const std::vector<std::string>& UnitList) const noexcept { 
+				return GetSpeedInfo(this->Current, 0, UnitList);
+			}
 		};
 	};
 	class Processor : public Base::ResponsePercentDataProcessor {
@@ -131,9 +143,7 @@ private:
 		Processor(StringManager& string, const std::string& FilePath, const std::string& BackgroundColor = "#ffffff")
 			: Base::ResponsePercentDataProcessor(string, FilePath, BackgroundColor, 10, 2.0 / 3.0, 1.0 / 3.0), ProcessorName(), ProcessNum() {}
 		void Draw(const int X, const int Y) const {
-			Base::ResponsePercentDataProcessor::string.get().Draw(X + 1, Y + 1, "CPU");
 			Base::ResponsePercentDataProcessor::Draw(X, Y);
-
 		}
 	private:
 		void UpdateResourceInfo(const picojson::object& data) override {
@@ -186,7 +196,7 @@ private:
 		std::pair<double, std::string> DiskUsedVal;
 		std::pair<double, std::string> DiskTotal;
 		std::string GetViewTextOnGraph() const override {
-			return "Disk(" + this->Drive + ")";
+			return "Disk Used(" + this->Drive + ")";
 		}
 		std::string GetViewTextInGraph() const override {
 			char Buffer[CharBufferSize];
@@ -224,24 +234,28 @@ private:
 	class DiskRead : public Base::ResponsePercentDataProcessor {
 	private:
 		Base::TransferPercentManager Transfer;
+		std::string Drive;
 		std::string GetViewTextOnGraph() const override {
-
+			return "Disk Read(" + this->Drive + ")";
 		}
 		std::string GetViewTextInGraph() const override {
-
+			char Buffer[CharBufferSize];
+			const auto Speed = this->Transfer.GetCurrent(DiskSpeedUnitList);
+			sprintf_s(Buffer, CharBufferSize, "%.2lf %s", Speed.first, Speed.second.c_str());
+			return std::string(Buffer);
 		}
 		std::string GetViewTextUnderGraph() const override {
-
+			return "";
 		}
 	public:
 		DiskRead(StringManager& string, const std::string& FilePath, const std::string& BackgroundColor = "#ffffff")
-			: Base::ResponsePercentDataProcessor(string, FilePath, BackgroundColor, 10, 2.0 / 3.0, 1.0 / 3.0), Transfer() {}
+			: Base::ResponsePercentDataProcessor(string, FilePath, BackgroundColor, 10, 2.0 / 3.0, 1.0 / 3.0), Transfer(), Drive() {}
 		void Draw(const int X, const int Y) const {
 			Base::ResponsePercentDataProcessor::Draw(X, Y);
-
 		}
 	private:
 		void UpdateResourceInfo(const picojson::object& DiskInfo) override {
+			if (this->Drive.empty()) this->Drive = DiskInfo.at("drive").get<std::string>();
 			Base::ResponsePercentDataProcessor::UpdateVal(this->Transfer.Calc(DiskInfo.at("read").get<double>()));
 		}
 	public:
@@ -251,25 +265,29 @@ private:
 	};
 	class DiskWrite : public Base::ResponsePercentDataProcessor {
 	private:
+		std::string Drive;
 		Base::TransferPercentManager Transfer;
 		std::string GetViewTextOnGraph() const override {
-
+			return "Disk Write(" + this->Drive + ")";
 		}
 		std::string GetViewTextInGraph() const override {
-
+			char Buffer[CharBufferSize];
+			const auto Speed = this->Transfer.GetCurrent(DiskSpeedUnitList);
+			sprintf_s(Buffer, CharBufferSize, "%.2lf %s", Speed.first, Speed.second.c_str());
+			return std::string(Buffer);
 		}
 		std::string GetViewTextUnderGraph() const override {
-
+			return "";
 		}
 	public:
 		DiskWrite(StringManager& string, const std::string& FilePath, const std::string& BackgroundColor = "#ffffff")
-			: Base::ResponsePercentDataProcessor(string, FilePath, BackgroundColor, 10, 2.0 / 3.0, 1.0 / 3.0), Transfer() {}
+			: Base::ResponsePercentDataProcessor(string, FilePath, BackgroundColor, 10, 2.0 / 3.0, 1.0 / 3.0), Transfer(), Drive() {}
 		void Draw(const int X, const int Y) const {
 			Base::ResponsePercentDataProcessor::Draw(X, Y);
-
 		}
 	private:
 		void UpdateResourceInfo(const picojson::object& DiskInfo) override {
+			if (this->Drive.empty()) this->Drive = DiskInfo.at("drive").get<std::string>();
 			Base::ResponsePercentDataProcessor::UpdateVal(this->Transfer.Calc(DiskInfo.at("write").get<double>()));
 		}
 	public:
@@ -281,25 +299,28 @@ private:
 	private:
 		Base::TransferPercentManager Transfer;
 		std::string GetViewTextOnGraph() const override {
-
+			return "Network Receive";
 		}
 		std::string GetViewTextInGraph() const override {
-
+			char Buffer[CharBufferSize];
+			const auto Speed = this->Transfer.GetCurrent(NetworkSpeedUnitList);
+			sprintf_s(Buffer, CharBufferSize, "%.2lf %s", Speed.first, Speed.second.c_str());
+			return std::string(Buffer);
 		}
 		std::string GetViewTextUnderGraph() const override {
-
+			return "";
 		}
 	public:
 		NetworkReceive(StringManager& string, const std::string& FilePath, const std::string& BackgroundColor = "#ffffff")
 			: Base::ResponsePercentDataProcessor(string, FilePath, BackgroundColor, 10, 2.0 / 3.0, 1.0 / 3.0), Transfer() {}
 		void Draw(const int X, const int Y) const {
 			Base::ResponsePercentDataProcessor::Draw(X, Y);
-
 		}
 	private:
 		void UpdateResourceInfo(const picojson::object& NetworkInfo) override {
-			Base::ResponsePercentDataProcessor::UpdateVal(this->Transfer.Calc(NetworkInfo.at("read").get<double>()));
+			Base::ResponsePercentDataProcessor::UpdateVal(this->Transfer.Calc(NetworkInfo.at("receive").get<double>() * 8));
 		}
+	public:
 		void ApplyViewParameter() {
 			Base::ResponsePercentDataProcessor::ApplyViewParameter();
 		}
@@ -308,25 +329,28 @@ private:
 	private:
 		Base::TransferPercentManager Transfer;
 		std::string GetViewTextOnGraph() const override {
-
+			return "Network Send";
 		}
 		std::string GetViewTextInGraph() const override {
-
+			char Buffer[CharBufferSize];
+			const auto Speed = this->Transfer.GetCurrent(NetworkSpeedUnitList);
+			sprintf_s(Buffer, CharBufferSize, "%.2lf %s", Speed.first, Speed.second.c_str());
+			return std::string(Buffer);
 		}
 		std::string GetViewTextUnderGraph() const override {
-
+			return "";
 		}
 	public:
 		NetworkSend(StringManager& string, const std::string& FilePath, const std::string& BackgroundColor = "#ffffff")
 			: Base::ResponsePercentDataProcessor(string, FilePath, BackgroundColor, 10, 2.0 / 3.0, 1.0 / 3.0), Transfer() {}
 		void Draw(const int X, const int Y) const {
 			Base::ResponsePercentDataProcessor::Draw(X, Y);
-
 		}
 	private:
 		void UpdateResourceInfo(const picojson::object& NetworkInfo) override {
-			Base::ResponsePercentDataProcessor::UpdateVal(this->Transfer.Calc(NetworkInfo.at("write").get<double>()));
+			Base::ResponsePercentDataProcessor::UpdateVal(this->Transfer.Calc(NetworkInfo.at("send").get<double>() * 8));
 		}
+	public:
 		void ApplyViewParameter() {
 			Base::ResponsePercentDataProcessor::ApplyViewParameter();
 		}
@@ -334,20 +358,32 @@ private:
 	Processor processor;
 	Memory memory;
 	DiskUsage diskUsed;
-	//DiskRead diskRead;
-	//DiskWrite diskWrite;
-	//NetworkReceive netReceive;
-	//NetworkSend netSend;
+	DiskRead diskRead;
+	DiskWrite diskWrite;
+	NetworkReceive netReceive;
+	NetworkSend netSend;
+	int StringSize;
 	static constexpr int GraphSpaceWidth = 10;
+	static constexpr int GraphSpaceHeight = 10;
 public:
 	ResponseProcessingManager(StringManager& string) :
 		processor(string, ".\\Graph\\Processor.png"),
 		memory(string, ".\\Graph\\Memory.png"),
-		diskUsed(string, ".\\Graph\\DiskUsed.png") {}
+		diskUsed(string, ".\\Graph\\DiskUsed.png"),
+		diskRead(string, ".\\Graph\\DiskRead.png"),
+		diskWrite(string, ".\\Graph\\DiskWrite.png"),
+		netReceive(string, ".\\Graph\\NetReceive.png"),
+		netSend(string, ".\\Graph\\NetSend.png"),
+		StringSize(string.StringSize) {}
+
 	void Draw() const {
-		this->processor.Draw(0, 0);
-		this->memory.Draw(GraphSpaceWidth + this->processor.GetRadius() * 2, 0);
-		this->diskUsed.Draw((GraphSpaceWidth + this->processor.GetRadius() + this->memory.GetRadius()) * 2, 0);
+		this->processor	.Draw(0																														, 0);
+		this->memory	.Draw(GraphSpaceWidth * 1 + this->processor.GetRadius() * 2																	, 0);
+		this->diskUsed	.Draw(GraphSpaceWidth * 2 + (this->processor.GetRadius() + this->memory.GetRadius()) * 2									, 0);
+		this->diskRead	.Draw(0																														, this->processor.GetRadius() * 2 + GraphSpaceHeight + this->StringSize * 2);
+		this->diskWrite	.Draw(GraphSpaceWidth * 1 + (this->diskRead.GetRadius()																) * 2	, this->memory.GetRadius() * 2 + GraphSpaceHeight + this->StringSize * 2);
+		this->netReceive.Draw(GraphSpaceWidth * 2 + (this->diskRead.GetRadius() + this->diskWrite.GetRadius()								) * 2	, this->diskUsed.GetRadius() * 2 + GraphSpaceHeight + this->StringSize * 2);
+		this->netSend	.Draw(GraphSpaceWidth * 3 + (this->diskRead.GetRadius() + this->diskWrite.GetRadius() + this->netReceive.GetRadius()) * 2	, this->diskUsed.GetRadius() * 2 + GraphSpaceHeight + this->StringSize * 2);
 	}
 	void Update(const picojson::object& obj, const bool WriteErrorJson = true) {
 #ifdef _DEBUG
@@ -355,6 +391,10 @@ public:
 			this->processor.Update(obj.at("cpu").get<picojson::object>());
 			this->memory.Update(obj.at("memory").get<picojson::object>().at("physical").get<picojson::object>());
 			this->diskUsed.Update(obj.at("disk").get<picojson::array>()[0].get<picojson::object>());
+			this->diskRead.Update(obj.at("disk").get<picojson::array>()[0].get<picojson::object>());
+			this->diskWrite.Update(obj.at("disk").get<picojson::array>()[0].get<picojson::object>());
+			this->netReceive.Update(obj.at("network").get<picojson::array>()[0].get<picojson::object>());
+			this->netSend.Update(obj.at("network").get<picojson::array>()[0].get<picojson::object>());
 		}
 		catch (const std::exception& er) {
 			if (!WriteErrorJson) throw er;
@@ -372,5 +412,9 @@ public:
 		this->processor.ApplyViewParameter();
 		this->memory.ApplyViewParameter();
 		this->diskUsed.ApplyViewParameter();
+		this->diskRead.ApplyViewParameter();
+		this->diskWrite.ApplyViewParameter();
+		this->netReceive.ApplyViewParameter();
+		this->netSend.ApplyViewParameter();
 	}
 };
